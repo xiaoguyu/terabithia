@@ -2,6 +2,7 @@ package com.javaedit.terabithia.method.annotation;
 
 import com.javaedit.terabithia.annotation.RequestMapping;
 import com.javaedit.terabithia.handler.web.HandlerExecutionChain;
+import com.javaedit.terabithia.handler.web.HandlerInterceptor;
 import com.javaedit.terabithia.method.HandlerMethod;
 import com.javaedit.terabithia.method.RequestMappingInfo;
 import io.netty.handler.codec.http.FullHttpRequest;
@@ -21,9 +22,9 @@ import org.springframework.util.ClassUtils;
 
 import java.lang.reflect.AnnotatedElement;
 import java.lang.reflect.Method;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Map;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.*;
 import java.util.stream.Collectors;
 
 /**
@@ -55,6 +56,10 @@ public class RequestMappingHandlerMapping implements ApplicationContextAware, In
     private String beanName;
 
     private final MappingRegistry mappingRegistry = new MappingRegistry();
+    /**
+     * 拦截器
+     */
+    private final List<HandlerInterceptor> interceptors = new ArrayList<>();
 
     @Override
     public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
@@ -79,6 +84,10 @@ public class RequestMappingHandlerMapping implements ApplicationContextAware, In
         return Collections.unmodifiableMap(
                 this.mappingRegistry.getRegistrations().entrySet().stream()
                         .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().handlerMethod)));
+    }
+
+    public void addInterceptor(HandlerInterceptor interceptor) {
+        this.interceptors.add(interceptor);
     }
 
     protected void handlerMethodsInitialized(Map<RequestMappingInfo, HandlerMethod> handlerMethods) {
@@ -166,13 +175,19 @@ public class RequestMappingHandlerMapping implements ApplicationContextAware, In
                 AnnotatedElementUtils.hasAnnotation(beanType, RequestMapping.class));
     }
 
-    public HandlerExecutionChain getHandler(FullHttpRequest request) {
+    public HandlerExecutionChain getHandler(FullHttpRequest request) throws Exception {
         // 获取请求的url
-        String uri = request.uri();
+        String uri = initLookupPath(request);
         RequestMappingInfo mappingInfo = this.mappingRegistry.getMappingsByDirectPath(uri);
         if (null == mappingInfo) {
             return null;
         }
+        // 判断请求是否匹配
+        mappingInfo = mappingInfo.getMatchingCondition(request);
+        if (null == mappingInfo) {
+            return null;
+        }
+
         MappingRegistration registration = this.mappingRegistry.getRegistrations().get(mappingInfo);
         if (null == registration) {
             return null;
@@ -185,8 +200,26 @@ public class RequestMappingHandlerMapping implements ApplicationContextAware, In
         return getHandlerExecutionChain(handler, request);
     }
 
+    /**
+     * @param request
+     * @return
+     * @apiNote 获取请求路径（不包含参数）
+     * @author wjw
+     * @date 2022/6/17 17:11
+     */
+    protected String initLookupPath(FullHttpRequest request) throws URISyntaxException {
+        URI uri = new URI(request.uri());
+        return uri.getPath();
+    }
+
     protected HandlerExecutionChain getHandlerExecutionChain(HandlerMethod handler, FullHttpRequest request) {
         HandlerExecutionChain chain = new HandlerExecutionChain(handler);
+        // 添加拦截器
+        for (HandlerInterceptor interceptor : this.interceptors) {
+            if (interceptor.match(request)) {
+                chain.addInterceptor(interceptor);
+            }
+        }
         return chain;
     }
 
@@ -205,8 +238,27 @@ public class RequestMappingHandlerMapping implements ApplicationContextAware, In
 
         public void register(RequestMappingInfo mapping, Object handler, Method method) {
             HandlerMethod handlerMethod = createHandlerMethod(handler, method);
+            // 校验映射
+            validateMethodMapping(handlerMethod, mapping);
             this.pathLookup.put(mapping.getPath(), mapping);
             this.registry.put(mapping, new MappingRegistration(mapping, handlerMethod, mapping.getPath()));
+        }
+
+        /**
+         * @param handlerMethod
+         * @param mapping
+         * @return
+         * @apiNote 校验映射，不允许有重复的handler映射
+         */
+        private void validateMethodMapping(HandlerMethod handlerMethod, RequestMappingInfo mapping) {
+            MappingRegistration registration = this.registry.get(mapping);
+            HandlerMethod existingHandlerMethod = (registration != null ? registration.getHandlerMethod() : null);
+            if (existingHandlerMethod != null && !existingHandlerMethod.equals(handlerMethod)) {
+                throw new IllegalStateException(
+                        "Ambiguous mapping. Cannot map '" + handlerMethod.getBean() + "' method \n" +
+                                handlerMethod + "\nto " + mapping + ": There is already '" +
+                                existingHandlerMethod.getBean() + "' bean method\n" + existingHandlerMethod + " mapped.");
+            }
         }
     }
 

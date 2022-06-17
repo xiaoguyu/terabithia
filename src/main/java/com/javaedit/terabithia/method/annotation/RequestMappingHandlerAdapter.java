@@ -4,6 +4,7 @@ import com.javaedit.terabithia.method.HandlerMethod;
 import com.javaedit.terabithia.method.support.HandlerMethodReturnValueHandler;
 import com.javaedit.terabithia.method.support.handler.HandlerMethodReturnValueHandlerComposite;
 import com.javaedit.terabithia.method.support.handler.RequestResponseBodyMethodProcessor;
+import com.javaedit.terabithia.method.support.handler.ViewNameMethodReturnValueHandler;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
 import org.springframework.beans.factory.InitializingBean;
@@ -51,6 +52,7 @@ public class RequestMappingHandlerAdapter implements InitializingBean {
         List<HandlerMethodReturnValueHandler> handlers = new ArrayList<>();
 
         handlers.add(new RequestResponseBodyMethodProcessor());
+        handlers.add(new ViewNameMethodReturnValueHandler());
         return handlers;
     }
 }

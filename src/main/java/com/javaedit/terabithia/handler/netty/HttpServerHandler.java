@@ -46,14 +46,45 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<FullHttpReque
     }
 
     private void doDispatch(ChannelHandlerContext ctx, FullHttpRequest request) throws Exception {
-        HandlerExecutionChain handler = this.handlerMapping.getHandler(request);
+        HandlerExecutionChain mappedHandler = null;
+        try {
+            mappedHandler = this.handlerMapping.getHandler(request);
 
-        if (handler == null) {
-            noHandlerFound(ctx);
-            return;
+            if (mappedHandler == null) {
+                noHandlerFound(ctx);
+                return;
+            }
+            // 执行拦截器-前置方法
+            if (!mappedHandler.applyPreHandle(ctx, request)) {
+                return;
+            }
+            // 执行handler
+            FullHttpResponse response = handlerAdapter.handle(request, mappedHandler.getHandler());
+
+            // 执行拦截器-后置方法
+            mappedHandler.applyPostHandle(ctx, request, response);
+
+            processDispatchResult(ctx, request, response, mappedHandler);
+        } catch (Exception ex) {
+            triggerAfterCompletion(ctx, request, mappedHandler, ex);
         }
-        // 执行handler
-        FullHttpResponse response = handlerAdapter.handle(request, handler.getHandler());
+    }
+
+    /**
+     * @param ctx
+     * @param request
+     * @param response
+     * @param mappedHandler
+     * @return
+     * @apiNote 处理请求结果
+     * @author wjw
+     * @date 2022/6/17 11:21
+     */
+    private void processDispatchResult(ChannelHandlerContext ctx, FullHttpRequest request, FullHttpResponse response, HandlerExecutionChain mappedHandler) {
+        // 执行拦截器-完成方法
+        if (mappedHandler != null) {
+            mappedHandler.triggerAfterCompletion(ctx, request, null);
+        }
 
         boolean keepAlive = HttpUtil.isKeepAlive(request);
         if (!keepAlive) {
@@ -65,10 +96,35 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<FullHttpReque
         }
     }
 
+    /**
+     * @param ctx
+     * @param request
+     * @param mappedHandler
+     * @param ex
+     * @return
+     * @apiNote 异常也会触发拦截器的完成方法
+     * @author wjw
+     * @date 2022/6/17 11:13
+     */
+    private void triggerAfterCompletion(ChannelHandlerContext ctx, FullHttpRequest request, HandlerExecutionChain mappedHandler, Exception ex) throws Exception {
+        if (mappedHandler != null) {
+            mappedHandler.triggerAfterCompletion(ctx, request, ex);
+        }
+        throw ex;
+    }
+
+    /**
+     * @param ctx
+     * @return
+     * @apiNote 找不到处理器，则返回404
+     * @author wjw
+     * @date 2022/6/17 11:13
+     */
     private void noHandlerFound(ChannelHandlerContext ctx) {
         FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, HttpResponseStatus.NOT_FOUND);
         response.headers().set(CONTENT_TYPE, "text/plain; charset=UTF-8");
-        response.content().writeBytes("Not Found".getBytes(StandardCharsets.UTF_8));
+        String result = "http state code:" + response.status().code() + "\nNot Found";
+        response.content().writeBytes(result.getBytes(StandardCharsets.UTF_8));
         response.headers().setInt(CONTENT_LENGTH, response.content().readableBytes());
 
         response.headers().set(CONNECTION, CLOSE);
@@ -86,11 +142,12 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<FullHttpReque
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
         cause = cause.getCause() == null ? cause : cause.getCause();
-        log.error("request error " + cause);
+        log.error("request error ", cause);
 
-        FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, HttpResponseStatus.NOT_FOUND);
+        FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, HttpResponseStatus.INTERNAL_SERVER_ERROR);
         response.headers().set(CONTENT_TYPE, "text/plain; charset=UTF-8");
-        response.content().writeBytes(cause.getMessage().getBytes(StandardCharsets.UTF_8));
+        String result = "http state code:" + response.status().code() + "\n" + cause.getMessage();
+        response.content().writeBytes(result.getBytes(StandardCharsets.UTF_8));
         response.headers().setInt(CONTENT_LENGTH, response.content().readableBytes());
 
         response.headers().set(CONNECTION, CLOSE);

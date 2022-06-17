@@ -1,10 +1,15 @@
 package com.javaedit.terabithia.method;
 
+import com.javaedit.terabithia.exception.HttpRequestMethodNotSupportedException;
+import com.javaedit.terabithia.exception.ServletException;
 import com.javaedit.terabithia.method.annotation.RequestMethod;
 import io.netty.handler.codec.http.FullHttpRequest;
-import lombok.Data;
+import io.netty.handler.codec.http.HttpMethod;
+import lombok.Getter;
+import org.springframework.lang.Nullable;
 
 import java.util.HashSet;
+import java.util.Objects;
 
 /**
  * @author wjw
@@ -12,7 +17,7 @@ import java.util.HashSet;
  * @title: RequestMappingInfo
  * @date 2022/6/11 14:47
  */
-@Data
+@Getter
 public class RequestMappingInfo {
 
     private String path;
@@ -54,8 +59,26 @@ public class RequestMappingInfo {
      * @author wjw
      * @date 2022/6/11 15:28
      */
-    public RequestMappingInfo getMatchingCondition(FullHttpRequest request) {
-        return null;
+    @Nullable
+    public RequestMappingInfo getMatchingCondition(FullHttpRequest request) throws ServletException {
+        HttpMethod httpMethod = request.method();
+        if (methods.length > 0) {
+            boolean matchMethod = false;
+            for (RequestMethod method : methods) {
+                if (method.name().equals(httpMethod.name())) {
+                    matchMethod = true;
+                    break;
+                }
+            }
+            if (!matchMethod) {
+                String[] allowedMethods = new String[methods.length];
+                for (int i = 0; i < methods.length; i++) {
+                    allowedMethods[i] = methods[i].name();
+                }
+                throw new HttpRequestMethodNotSupportedException(httpMethod.name(), allowedMethods);
+            }
+        }
+        return this;
     }
 
     public static class Builder {
@@ -78,5 +101,18 @@ public class RequestMappingInfo {
             }
             return new RequestMappingInfo(path, methods);
         }
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        RequestMappingInfo that = (RequestMappingInfo) o;
+        return Objects.equals(getPath(), that.getPath());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(getPath());
     }
 }
