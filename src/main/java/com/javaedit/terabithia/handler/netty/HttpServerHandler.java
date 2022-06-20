@@ -36,7 +36,8 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<FullHttpReque
     }
 
     @Override
-    protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest request) throws Exception {
+    protected void channelRead0(ChannelHandlerContext ctx, FullHttpRequest fullHttpRequest) throws Exception {
+        FullHttpRequest request = new ParamWrapperRequest(fullHttpRequest);
         this.doDispatch(ctx, request);
     }
 

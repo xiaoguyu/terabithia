@@ -1,13 +1,19 @@
 package com.javaedit.terabithia.method.annotation;
 
 import com.javaedit.terabithia.method.HandlerMethod;
+import com.javaedit.terabithia.method.support.HandlerMethodArgumentResolver;
+import com.javaedit.terabithia.method.support.handler.HandlerMethodArgumentResolverComposite;
 import com.javaedit.terabithia.method.support.handler.HandlerMethodReturnValueHandlerComposite;
 import io.netty.handler.codec.http.FullHttpRequest;
 import io.netty.handler.codec.http.FullHttpResponse;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.DefaultParameterNameDiscoverer;
 import org.springframework.core.MethodParameter;
+import org.springframework.core.ParameterNameDiscoverer;
 import org.springframework.lang.Nullable;
 import org.springframework.util.ObjectUtils;
 import org.springframework.util.ReflectionUtils;
+import org.springframework.util.StringUtils;
 
 import java.lang.reflect.Method;
 
@@ -23,11 +29,14 @@ import java.lang.reflect.Method;
  * @update wjw 2022/6/14 16:34
  * @since 3.1
  */
+@Slf4j
 public class InvocableHandlerMethod extends HandlerMethod {
 
     private static final Object[] EMPTY_ARGS = new Object[0];
-//    private ParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
 
+    private HandlerMethodArgumentResolverComposite resolvers = new HandlerMethodArgumentResolverComposite();
+
+    private ParameterNameDiscoverer parameterNameDiscoverer = new DefaultParameterNameDiscoverer();
     @Nullable
     private HandlerMethodReturnValueHandlerComposite returnValueHandlers;
 
@@ -53,6 +62,13 @@ public class InvocableHandlerMethod extends HandlerMethod {
         return method.invoke(getBean(), args);
     }
 
+    /**
+     * @param request
+     * @return
+     * @apiNote 解析请求，获取方法参数
+     * @author wjw
+     * @date 2022/6/20 11:17
+     */
     protected Object[] getMethodArgumentValues(FullHttpRequest request) throws Exception {
         MethodParameter[] parameters = getMethodParameters();
         // 如果没有参数
@@ -60,23 +76,42 @@ public class InvocableHandlerMethod extends HandlerMethod {
             return EMPTY_ARGS;
         }
 
-        // 参数解析器下个版本再整
-        Object[] args = new Object[1];
-        args[0] = request;
-
-
-//        Object[] args = new Object[parameters.length];
-//        for (int i = 0; i < parameters.length; i++) {
-//            MethodParameter parameter = parameters[i];
-//            // 名称解析器
-//            parameter.initParameterNameDiscovery(this.parameterNameDiscoverer);
-//
-//        }
+        Object[] args = new Object[parameters.length];
+        for (int i = 0; i < parameters.length; i++) {
+            MethodParameter parameter = parameters[i];
+            // 名称解析器
+            parameter.initParameterNameDiscovery(this.parameterNameDiscoverer);
+            // 解析器不支持该参数，则抛出异常
+            if (!this.resolvers.supportsParameter(parameter)) {
+                throw new IllegalStateException(formatArgumentError(parameter, "No suitable resolver"));
+            }
+            try {
+                args[i] = this.resolvers.resolveArgument(parameter, request);
+            } catch (Exception ex) {
+                // Leave stack trace for later, exception may actually be resolved and handled...
+                if (log.isDebugEnabled()) {
+                    String exMsg = ex.getMessage();
+                    if (exMsg != null && !exMsg.contains(parameter.getExecutable().toGenericString())) {
+                        log.debug(formatArgumentError(parameter, exMsg));
+                    }
+                }
+                throw ex;
+            }
+        }
 
         return args;
     }
 
+    protected static String formatArgumentError(MethodParameter param, String message) {
+        return "Could not resolve parameter [" + param.getParameterIndex() + "] in " +
+                param.getExecutable().toGenericString() + (StringUtils.hasText(message) ? ": " + message : "");
+    }
+
     public void setHandlerMethodReturnValueHandlers(HandlerMethodReturnValueHandlerComposite returnValueHandlers) {
         this.returnValueHandlers = returnValueHandlers;
+    }
+
+    public void setHandlerMethodArgumentResolvers(HandlerMethodArgumentResolverComposite argumentResolvers) {
+        this.resolvers = argumentResolvers;
     }
 }
