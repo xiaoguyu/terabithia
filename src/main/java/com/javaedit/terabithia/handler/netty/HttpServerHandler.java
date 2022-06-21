@@ -90,10 +90,10 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<FullHttpReque
         boolean keepAlive = HttpUtil.isKeepAlive(request);
         if (!keepAlive) {
             response.headers().set(CONNECTION, CLOSE);
-            ctx.write(response).addListener(ChannelFutureListener.CLOSE);
+            ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
         } else {
             response.headers().set(CONNECTION, HttpHeaderValues.KEEP_ALIVE);
-            ctx.write(response);
+            ctx.writeAndFlush(response);
         }
     }
 
@@ -129,7 +129,7 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<FullHttpReque
         response.headers().setInt(CONTENT_LENGTH, response.content().readableBytes());
 
         response.headers().set(CONNECTION, CLOSE);
-        ctx.write(response).addListener(ChannelFutureListener.CLOSE);
+        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }
 
     /**
@@ -152,6 +152,6 @@ public class HttpServerHandler extends SimpleChannelInboundHandler<FullHttpReque
         response.headers().setInt(CONTENT_LENGTH, response.content().readableBytes());
 
         response.headers().set(CONNECTION, CLOSE);
-        ctx.write(response).addListener(ChannelFutureListener.CLOSE);
+        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }
 }

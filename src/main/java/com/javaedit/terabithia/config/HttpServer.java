@@ -1,6 +1,5 @@
 package com.javaedit.terabithia.config;
 
-import com.javaedit.terabithia.handler.netty.HelloWorldHttp1Handler;
 import com.javaedit.terabithia.handler.netty.HttpServerHandler;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
@@ -58,7 +57,6 @@ public class HttpServer {
 //						.addLast(new HttpChunkContentCompressor())
                                     //大文件支持
                                     .addLast(new ChunkedWriteHandler())
-//                                    .addLast(new HelloWorldHttp1Handler("ALPN Negotiation"));
                                     .addLast(new HttpServerHandler(context));
                         }
                     });
